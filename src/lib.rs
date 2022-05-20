@@ -1,9 +1,6 @@
 use anyhow::Result;
 use embedded_hal::blocking::i2c;
-use modular_bitfield::{
-    bitfield,
-    prelude::{B1, B2, B3},
-};
+use paste::paste;
 
 mod types;
 pub use crate::types::Error;
@@ -29,13 +26,19 @@ impl Register {
     const INTERRUPT_PERSIST: u8 = 0x9E;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mode {
     STANDBY = 0x00,
     ACTIVE = 0x01,
 }
 
-#[derive(Clone, Copy)]
+impl Into<u8> for Mode {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Gain {
     Gain1x = 0x00,
     Gain2x = 0x01,
@@ -43,6 +46,12 @@ pub enum Gain {
     Gain8x = 0x03,
     Gain48x = 0x06,
     Gain96x = 0x07,
+}
+
+impl Into<u8> for Gain {
+    fn into(self) -> u8 {
+        self as u8
+    }
 }
 
 impl Into<f32> for &Gain {
@@ -58,7 +67,7 @@ impl Into<f32> for &Gain {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MeasurementRate {
     Ms50 = 0x00,
     Ms100 = 0x01,
@@ -68,7 +77,13 @@ pub enum MeasurementRate {
     Ms2000 = 0x05,
 }
 
-#[derive(Clone, Copy)]
+impl Into<u8> for MeasurementRate {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IntegrationTime {
     Ms100 = 0x00,
     Ms50 = 0x01,
@@ -79,6 +94,13 @@ pub enum IntegrationTime {
     Ms300 = 0x06,
     Ms350 = 0x07,
 }
+
+impl Into<u8> for IntegrationTime {
+    fn into(self) -> u8 {
+        self as u8
+    }
+}
+
 impl Into<f32> for &IntegrationTime {
     // See: https://github.com/aniketpalu/LTR303/blob/main/LTR-303%20329_Appendix%20A%20Ver_1.0_22%20Feb%202013.pdf
     fn into(self) -> f32 {
@@ -117,45 +139,103 @@ impl Default for Config {
     }
 }
 
-#[bitfield]
-struct ControlReg {
-    mode: B1,
-    sw_reset: B1,
-    gain: B3,
-    na: B3,
+struct Field<T> {
+    startIndex: u8,
+    width: u8,
+    value: T,
 }
 
-impl Default for ControlReg {
-    fn default() -> Self {
-        ControlReg::new()
-            .with_na(0)
-            .with_gain(Gain::Gain1x as u8)
-            .with_mode(Mode::STANDBY as u8)
-            .with_sw_reset(0)
+impl<T> Field<T>
+where
+    T: Into<u8>,
+{
+    fn bits(self) -> u8 {
+        // First create a mask of N '1' bits to be used to truncate the value
+        let mut mask: u8 = 0x00;
+        for _ in 0..self.width {
+            mask = mask << 1;
+            mask |= 1;
+        }
+
+        let val: u8 = self.value.into();
+        let tmp: u8 = (val & mask) << self.startIndex;
+        tmp
     }
 }
 
-#[bitfield]
-struct MeasRateReg {
-    measurement_rate: B3,
-    integration_time: B3,
-    na: B2,
-}
+// Define a macro to create a register. This register stores its variables in fields
+#[macro_export]
+macro_rules! create_register {
+    ($reg_name:ident, $($element: ident: $ty: ty),*) => {
+        struct $reg_name { $($element: Field<$ty>),* }
 
-impl Default for MeasRateReg {
-    fn default() -> Self {
-        // Default 100ms integration time with 500ms measurement rate
-        MeasRateReg::new()
-            .with_na(0)
-            .with_integration_time(IntegrationTime::Ms100 as u8)
-            .with_measurement_rate(MeasurementRate::Ms500 as u8)
+        impl $reg_name {
+            fn value(self) -> u8 {
+                let mut temp: u8 = 0x00;
+                $(
+                    temp |= self.$element.bits();
+                )*
+                temp
+            }
+
+            // Creates with_<variable> methods
+            $(
+                paste!{ fn [<with_ $element>] (self, paste!{[<new_ $element>]}: $ty) -> Self {
+                    let mut tmp = $reg_name{..self};
+                    tmp.$element.value = paste!{[<new_ $element>]};
+                    tmp
+                }}
+            )*
+        }
     }
 }
 
-// struct BitFlags;
-// impl BitFlags{
-//     const
-// }
+create_register!(ControlRegister, mode: Mode, gain: Gain, sw_reset: bool);
+
+impl Default for ControlRegister {
+    fn default() -> Self {
+        ControlRegister {
+            mode: Field {
+                startIndex: 0,
+                width: 1,
+                value: Mode::STANDBY,
+            },
+            gain: Field {
+                startIndex: 2,
+                width: 3,
+                value: Gain::Gain1x,
+            },
+            sw_reset: Field {
+                startIndex: 1,
+                width: 1,
+                value: false,
+            },
+        }
+    }
+}
+
+create_register!(
+    MeasRateRegister,
+    measurement_rate: MeasurementRate,
+    integration_time: IntegrationTime
+);
+
+impl Default for MeasRateRegister {
+    fn default() -> Self {
+        MeasRateRegister {
+            measurement_rate: Field {
+                startIndex: 0,
+                width: 3,
+                value: MeasurementRate::Ms500,
+            },
+            integration_time: Field {
+                startIndex: 3,
+                width: 3,
+                value: IntegrationTime::Ms100,
+            },
+        }
+    }
+}
 
 struct LTR303<I2C> {
     i2c: I2C,
@@ -196,18 +276,16 @@ where
     // Starts a single-shot measurement!
     pub fn start_measurement(&mut self) -> Result<(), Error<E>> {
         // Configure gain, set active mode
-        let control_reg = ControlReg::default()
-            .with_gain(self.config.gain as u8)
-            .with_mode(Mode::ACTIVE as u8);
+        let control_reg = ControlRegister::default()
+            .with_gain(self.config.gain)
+            .with_mode(Mode::ACTIVE);
 
         // Then configure the integration time & measurement rate
-        let meas_rate_reg = MeasRateReg::default()
-            .with_integration_time(self.config.integration_time as u8)
-            .with_measurement_rate(self.config.measurement_rate as u8);
-        self.write_register(
-            Register::ALS_MEAS_RATE,
-            meas_rate_reg.bytes.first().unwrap().to_owned(),
-        )?;
+        let meas_rate_reg = MeasRateRegister::default()
+            .with_integration_time(self.config.integration_time)
+            .with_measurement_rate(self.config.measurement_rate);
+
+        self.write_register(Register::ALS_MEAS_RATE, meas_rate_reg.value())?;
 
         // Then, configure the thresholds for the interrupt!
         self.write_register(
@@ -232,10 +310,7 @@ where
         self.write_register(Register::INTERRUPT, 0b00000010)?;
 
         // Then we start a measurement
-        self.write_register(
-            Register::ALS_CONTR,
-            control_reg.bytes.first().unwrap().to_owned(),
-        )?;
+        self.write_register(Register::ALS_CONTR, control_reg.value())?;
         self.measurement_started = true;
 
         Ok(())
@@ -246,12 +321,7 @@ where
         // At the end, put the sensor in standby, since we don't need periodic measurements!
         self.write_register(
             Register::ALS_CONTR,
-            ControlReg::default()
-                .with_mode(Mode::STANDBY as u8)
-                .bytes
-                .first()
-                .unwrap()
-                .to_owned(),
+            ControlRegister::default().with_mode(Mode::STANDBY).value(),
         )?;
         todo!()
     }
@@ -300,7 +370,7 @@ fn raw_to_lux(ch1_data: u16, ch0_data: u16, ltr303_config: &Config) -> f32 {
 mod tests {
     // this code lives inside a `tests` module
 
-    use super::{Error, Register, LTR303};
+    use super::{Register, LTR303};
     use embedded_hal_mock::i2c;
     const LTR303_ADDR: u8 = 0x29;
 
@@ -372,7 +442,10 @@ mod tests {
 
     #[cfg(test)]
     mod unit_tests {
-        use crate::raw_to_lux;
+        use crate::{
+            raw_to_lux, ControlRegister, Field, Gain, IntegrationTime, MeasRateRegister,
+            MeasurementRate, Mode,
+        };
 
         #[test]
         fn calculate_lux_from_raw() {
@@ -392,6 +465,35 @@ mod tests {
             let lux = raw_to_lux(ch1_data, ch0_data, &ltr303_config);
 
             assert_eq!(lux, 9517.875);
+        }
+
+        #[test]
+        fn test_registers() {
+            // Test that the register API works as expected!
+            let control_reg = ControlRegister::default()
+                .with_mode(Mode::STANDBY)
+                .with_gain(Gain::Gain8x);
+
+            assert_eq!(control_reg.gain.value, Gain::Gain8x);
+            assert_eq!(control_reg.value(), 0b000_011_0_0);
+
+            let measrate_reg = MeasRateRegister::default()
+                .with_integration_time(IntegrationTime::Ms200)
+                .with_measurement_rate(MeasurementRate::Ms2000);
+
+            assert_eq!(measrate_reg.integration_time.value, IntegrationTime::Ms200);
+            assert_eq!(measrate_reg.value(), 0b00_010_101);
+        }
+
+        #[test]
+        fn test_fields() {
+            // Field one should be 0b00010110
+            let field1 = Field {
+                startIndex: 1,
+                width: 4,
+                value: 0x0Bu8,
+            };
+            assert_eq!(field1.bits(), 0b0001_0110)
         }
     }
 }
