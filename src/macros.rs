@@ -9,7 +9,7 @@ macro_rules! create_struct_with {
             impl $struct_name {
                 $(
                     #[allow(dead_code)]
-                    fn [<with_ $varname>](self, [<new_ $varname>]: $vartype) -> Self {
+                    pub fn [<with_ $varname>](self, [<new_ $varname>]: $vartype) -> Self {
                         $struct_name {$varname: [<new_ $varname>], ..self}
                     }
                 )*
