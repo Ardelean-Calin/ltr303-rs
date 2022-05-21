@@ -7,6 +7,7 @@ use types::LuxData;
 use types::RawData;
 
 mod fields;
+mod macros;
 mod registers;
 mod types;
 pub use crate::fields::*;
@@ -15,14 +16,7 @@ pub use crate::types::Error;
 
 const DEVICE_BASE_ADDRESS: u8 = 0x29;
 
-struct LTR303Config {
-    mode: Mode,
-    gain: Gain,
-    integration_time: IntegrationTime,
-    measurement_rate: MeasurementRate,
-    threshold_up: u16,
-    threshold_low: u16,
-}
+create_struct_with! (LTR303Config, {mode: Mode, gain: Gain, integration_time: IntegrationTime, measurement_rate: MeasurementRate, int_thrsh_up: u16, int_thrsh_down: u16});
 
 impl Default for LTR303Config {
     fn default() -> Self {
@@ -31,8 +25,23 @@ impl Default for LTR303Config {
             gain: crate::Gain::Gain1x,
             integration_time: crate::IntegrationTime::Ms100,
             measurement_rate: crate::MeasurementRate::Ms500,
-            threshold_up: 0x0000,
-            threshold_low: 0xFFFF,
+            int_thrsh_up: 0x0000,
+            int_thrsh_down: 0xFFFF,
+        }
+    }
+}
+
+impl LTR303Config {
+    pub fn with_integration_time(self, integration_time: IntegrationTime) -> Self {
+        Self {
+            integration_time,
+            ..self
+        }
+    }
+    pub fn with_measurement_rate(self, measurement_rate: MeasurementRate) -> Self {
+        Self {
+            measurement_rate,
+            ..self
         }
     }
 }
@@ -44,7 +53,7 @@ struct SensorStatus {
     valid: bool,
 }
 
-struct LTR303<I2C> {
+pub struct LTR303<I2C> {
     i2c: I2C,
     address: u8,
 }
@@ -91,19 +100,19 @@ where
         // Then, configure the thresholds for the interrupt!
         self.write_register(
             Register::ALS_THRES_LOW_0,
-            config.threshold_low.to_be_bytes()[1],
+            config.int_thrsh_down.to_be_bytes()[1],
         )?;
         self.write_register(
             Register::ALS_THRES_LOW_1,
-            config.threshold_low.to_be_bytes()[0],
+            config.int_thrsh_down.to_be_bytes()[0],
         )?;
         self.write_register(
             Register::ALS_THRES_UP_0,
-            config.threshold_up.to_be_bytes()[1],
+            config.int_thrsh_up.to_be_bytes()[1],
         )?;
         self.write_register(
             Register::ALS_THRES_UP_1,
-            config.threshold_up.to_be_bytes()[0],
+            config.int_thrsh_up.to_be_bytes()[0],
         )?;
 
         // Then enable interrupts
@@ -117,11 +126,17 @@ where
     }
 
     /// Returns the contents of the ALS_STATUS register.
-    pub fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
+    fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
         let data = self.read_register(Register::ALS_STATUS)?;
 
         let status_reg: StatusRegister = data.into();
         Ok(status_reg)
+    }
+
+    /// Check if new data is ready
+    pub fn data_ready(&mut self) -> Result<bool, Error<E>> {
+        let status = self.get_status()?;
+        Ok(status.data_status.value == DataStatus::New)
     }
 
     // TODO: CH1 data should be read before CH0 data (see pg. 17 of datasheet)
