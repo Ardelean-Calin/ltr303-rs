@@ -1,4 +1,5 @@
 extern crate num as num_renamed;
+use crate::create_register;
 use crate::fields::*;
 use num_renamed::FromPrimitive;
 use num_renamed::ToPrimitive;

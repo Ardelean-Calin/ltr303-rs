@@ -3,6 +3,7 @@
 extern crate num_derive;
 use anyhow::Result;
 use embedded_hal::blocking::i2c;
+use paste::paste;
 use types::LuxData;
 use types::RawData;
 
@@ -29,28 +30,6 @@ impl Default for LTR303Config {
             int_thrsh_down: 0xFFFF,
         }
     }
-}
-
-impl LTR303Config {
-    pub fn with_integration_time(self, integration_time: IntegrationTime) -> Self {
-        Self {
-            integration_time,
-            ..self
-        }
-    }
-    pub fn with_measurement_rate(self, measurement_rate: MeasurementRate) -> Self {
-        Self {
-            measurement_rate,
-            ..self
-        }
-    }
-}
-
-struct SensorStatus {
-    data_status: bool,
-    int_status: bool,
-    gain: Gain,
-    valid: bool,
 }
 
 pub struct LTR303<I2C> {
@@ -316,7 +295,7 @@ mod tests {
         // Start a Gain4x single measurement with integration time 100ms and measurement rate 2000ms,
         // then after we got a result, put the sensor to sleep.
         let expectations = [
-            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_MEAS_RATE, 0b0000_0101]), // set times
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_MEAS_RATE, 0b0001_1101]), // set times
             i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_LOW_0, 0xFF]), // set thresholds
             i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_LOW_1, 0xFF]), // set thresholds
             i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_UP_0, 0x00]), // set thresholds
@@ -358,15 +337,15 @@ mod tests {
         let mock = i2c::Mock::new(&expectations);
 
         // Created expected bus communication. Below is the expected developer workflow:
-        let mut config = crate::LTR303Config::default();
-        config.integration_time = crate::IntegrationTime::Ms100;
-        config.measurement_rate = crate::MeasurementRate::Ms2000;
-        config.gain = crate::Gain::Gain4x;
+        let config = crate::LTR303Config::default()
+            .with_integration_time(crate::IntegrationTime::Ms400)
+            .with_measurement_rate(crate::MeasurementRate::Ms2000)
+            .with_gain(crate::Gain::Gain4x);
 
         let mut ltr303 = LTR303::init(mock);
         ltr303.start_measurement(&config).unwrap();
 
-        while (ltr303.get_status().unwrap().data_status.value != DataStatus::New) {}
+        while ltr303.get_status().unwrap().data_status.value != DataStatus::New {}
 
         let lux_data = ltr303.get_lux_data(&config).unwrap();
         ltr303.standby().unwrap();
