@@ -1,3 +1,4 @@
+#![no_std]
 use anyhow::Result;
 use embedded_hal::blocking::i2c;
 use paste::paste;
@@ -163,7 +164,23 @@ where
     }
 }
 
-// Define a macro to create a register. This register stores its variables in fields
+
+/// Defines a standard structure for a 8-bit register. 
+///
+/// This macro takes `StructName, {structfield1: type1, structfield2: type2, ...}` as arguments
+/// and generates a structure:
+/// 
+/// ```compile_fail
+/// struct StructName {
+///     structfield1: Field<type1>,
+///     structfield2: Field<type2>,
+///     ...
+/// }
+/// ```
+/// 
+/// The structure will have automatic `with_structfieldX()` factory methods created, as well
+/// as a `value()` function that returns the encoded u8 data.
+///
 #[macro_export]
 macro_rules! create_register {
     ($reg_name:ident, {$($element: ident: $ty: ty),*}) => {
@@ -368,6 +385,7 @@ fn raw_to_lux(ch1_data: u16, ch0_data: u16, ltr303_config: &Config) -> f32 {
 mod tests {
     // this code lives inside a `tests` module
 
+    extern crate std;
     use super::{Register, LTR303};
     use embedded_hal_mock::i2c;
     const LTR303_ADDR: u8 = 0x29;
@@ -376,8 +394,8 @@ mod tests {
     fn manufacturer_info() {
         let expectations = [i2c::Transaction::write_read(
             LTR303_ADDR,
-            vec![Register::MANUFAC_ID],
-            vec![0x05],
+            std::vec![Register::MANUFAC_ID],
+            std::vec![0x05],
         )];
         let mock = i2c::Mock::new(&expectations);
 
@@ -393,8 +411,8 @@ mod tests {
     fn part_id() {
         let expectations = [i2c::Transaction::write_read(
             LTR303_ADDR,
-            vec![Register::PART_ID],
-            vec![0xA0],
+            std::vec![Register::PART_ID],
+            std::vec![0xA0],
         )];
         let mock = i2c::Mock::new(&expectations);
 
@@ -411,16 +429,16 @@ mod tests {
         let expectations = [
             i2c::Transaction::write(
                 LTR303_ADDR,
-                vec![Register::ALS_MEAS_RATE, 0b00010101], // 200ms integration time & 2000ms meas rate
+                std::vec![Register::ALS_MEAS_RATE, 0b00010101], // 200ms integration time & 2000ms meas rate
             ),
-            i2c::Transaction::write(LTR303_ADDR, vec![Register::ALS_THRES_LOW_0, 0xFF]),
-            i2c::Transaction::write(LTR303_ADDR, vec![Register::ALS_THRES_LOW_1, 0xFF]),
-            i2c::Transaction::write(LTR303_ADDR, vec![Register::ALS_THRES_UP_0, 0x00]),
-            i2c::Transaction::write(LTR303_ADDR, vec![Register::ALS_THRES_UP_1, 0x00]),
-            i2c::Transaction::write(LTR303_ADDR, vec![Register::INTERRUPT, 0b00000010]),
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_LOW_0, 0xFF]),
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_LOW_1, 0xFF]),
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_UP_0, 0x00]),
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_UP_1, 0x00]),
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::INTERRUPT, 0b00000010]),
             i2c::Transaction::write(
                 LTR303_ADDR,
-                vec![Register::ALS_CONTR, 0b00000001], // Active mode, default otherwise
+                std::vec![Register::ALS_CONTR, 0b00000001], // Active mode, default otherwise
             ),
         ];
 
