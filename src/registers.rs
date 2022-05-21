@@ -1,5 +1,15 @@
+extern crate num as num_renamed;
 use crate::fields::*;
+use num_renamed::FromPrimitive;
+use num_renamed::ToPrimitive;
 use paste::paste;
+
+pub mod helpers {
+    #[inline]
+    pub fn get_mask(startIndex: u8, width: u8) -> u8 {
+        ((1u8 << width) - 1u8) << startIndex
+    }
+}
 
 /// Register definitions
 pub struct Register;
@@ -19,6 +29,28 @@ impl Register {
     pub const ALS_THRES_LOW_0: u8 = 0x99;
     pub const ALS_THRES_LOW_1: u8 = 0x9A;
     pub const INTERRUPT_PERSIST: u8 = 0x9E;
+}
+
+// General Field structure used by registers
+pub struct Field<T> {
+    pub startIndex: u8,
+    pub width: u8,
+    pub value: T,
+}
+
+impl<T> Field<T>
+where
+    T: ToPrimitive,
+{
+    pub fn bits(self) -> u8 {
+        // First create a mask of N '1' bits to be used to truncate the value
+        // The algorithm: ((1 << length) - 1) << pos
+        let mask: u8 = self::helpers::get_mask(self.startIndex, self.width);
+
+        let val: u8 = num_renamed::ToPrimitive::to_u8(&self.value).unwrap();
+        let tmp: u8 = (val << self.startIndex) & mask;
+        tmp
+    }
 }
 
 /// Defines a standard structure for a 8-bit register.
@@ -62,10 +94,27 @@ macro_rules! create_register {
             )*
             }
         }
+
+        paste! {
+            // Creates a From<u8> implementation for this register
+            impl From<u8> for $reg_name {
+                fn from(val: u8) -> Self {
+                    let new_reg = $reg_name::default();
+
+                    $(
+                        let [<$element _mask>] = self::helpers::get_mask(new_reg.$element.startIndex, new_reg.$element.width);
+                        let [<$element _val>] = FromPrimitive::from_u8( (val & [<$element _mask>]) >> new_reg.$element.startIndex ).unwrap();
+                        let new_reg = new_reg.[<with_ $element>]([<$element _val>]);
+                    )*
+
+                    new_reg
+                }
+            }
+        }
     }
 }
 
-create_register!(ControlRegister, {mode: Mode, gain: Gain, sw_reset: bool});
+create_register!(ControlRegister, {mode: Mode, gain: Gain, sw_reset: ResetStatus});
 
 impl Default for ControlRegister {
     fn default() -> Self {
@@ -83,7 +132,7 @@ impl Default for ControlRegister {
             sw_reset: Field {
                 startIndex: 1,
                 width: 1,
-                value: false,
+                value: ResetStatus::Idle,
             },
         }
     }
@@ -103,6 +152,54 @@ impl Default for MeasRateRegister {
                 startIndex: 3,
                 width: 3,
                 value: IntegrationTime::Ms100,
+            },
+        }
+    }
+}
+
+create_register!(InterruptRegister, {interrupt_mode: ISRMode, interrupt_polarity: ISRPol});
+
+impl Default for InterruptRegister {
+    fn default() -> Self {
+        InterruptRegister {
+            interrupt_mode: Field {
+                startIndex: 1,
+                width: 1,
+                value: ISRMode::INACTIVE,
+            },
+            interrupt_polarity: Field {
+                startIndex: 2,
+                width: 1,
+                value: ISRPol::ActiveLow,
+            },
+        }
+    }
+}
+
+create_register!(StatusRegister, {data_valid: DataValidity, gain: Gain, int_status: IntStatus, data_status: DataStatus});
+
+impl Default for StatusRegister {
+    fn default() -> Self {
+        StatusRegister {
+            data_valid: Field {
+                startIndex: 7,
+                width: 1,
+                value: DataValidity::DataValid,
+            },
+            gain: Field {
+                startIndex: 4,
+                width: 3,
+                value: Gain::Gain1x,
+            },
+            int_status: Field {
+                startIndex: 3,
+                width: 1,
+                value: IntStatus::Inactive,
+            },
+            data_status: Field {
+                startIndex: 2,
+                width: 1,
+                value: DataStatus::Old,
             },
         }
     }

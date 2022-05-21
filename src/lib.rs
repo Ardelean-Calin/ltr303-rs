@@ -1,4 +1,6 @@
 #![no_std]
+#[macro_use]
+extern crate num_derive;
 use anyhow::Result;
 use embedded_hal::blocking::i2c;
 
@@ -31,6 +33,13 @@ impl Default for Config {
             threshold_low: 0xFFFF,
         }
     }
+}
+
+struct SensorStatus {
+    data_status: bool,
+    int_status: bool,
+    gain: Gain,
+    valid: bool,
 }
 
 struct LTR303<I2C> {
@@ -112,8 +121,17 @@ where
         Ok(())
     }
 
+    pub fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
+        let data = self.read_register(Register::ALS_STATUS)?;
+
+        let status_reg: StatusRegister = data.into();
+        Ok(status_reg)
+    }
+
     // TODO: CH1 data should be read before CH0 data (see pg. 17 of datasheet)
     pub fn get_raw_data(&mut self) -> Result<(), Error<E>> {
+        // Read raw data
+
         // At the end, put the sensor in standby, since we don't need periodic measurements!
         self.write_register(
             Register::ALS_CONTR,
@@ -241,7 +259,7 @@ mod tests {
     mod unit_tests {
         use crate::{
             raw_to_lux, ControlRegister, Field, Gain, IntegrationTime, MeasRateRegister,
-            MeasurementRate, Mode,
+            MeasurementRate, Mode, ResetStatus,
         };
 
         #[test]
@@ -280,6 +298,17 @@ mod tests {
 
             assert_eq!(measrate_reg.integration_time.value, IntegrationTime::Ms200);
             assert_eq!(measrate_reg.value(), 0b00_010_101);
+        }
+
+        #[test]
+        fn test_register_from_u8(){
+            // Tests that we can properly transform a u8 value to a register with fields!
+            let contr_reg_val: u8 = 0b000_010_1_1;
+            let control_reg: ControlRegister = contr_reg_val.into();
+
+            assert_eq!(control_reg.gain.value, Gain::Gain4x);
+            assert_eq!(control_reg.sw_reset.value, ResetStatus::Resetting);
+            assert_eq!(control_reg.mode.value, Mode::ACTIVE);
         }
 
         #[test]
