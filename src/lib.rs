@@ -4,6 +4,7 @@ extern crate num_derive;
 use anyhow::Result;
 use embedded_hal::blocking::i2c;
 use types::LuxData;
+use types::RawData;
 
 mod fields;
 mod registers;
@@ -124,18 +125,34 @@ where
     }
 
     // TODO: CH1 data should be read before CH0 data (see pg. 17 of datasheet)
-    pub fn get_raw_data(&mut self) -> Result<(), Error<E>> {
+    fn get_raw_data(&mut self) -> Result<RawData, Error<E>> {
         // Read raw data
+        let ch1_0 = self.read_register(Register::ALS_DATA_CH1_0)? as u16;
+        let ch1_1 = self.read_register(Register::ALS_DATA_CH1_1)? as u16;
+        let ch0_0 = self.read_register(Register::ALS_DATA_CH0_0)? as u16;
+        let ch0_1 = self.read_register(Register::ALS_DATA_CH0_1)? as u16;
 
-        // At the end, put the sensor in standby, since we don't need periodic measurements!
+        Ok(RawData {
+            ch0_raw: (ch0_1 << 8) | ch0_0,
+            ch1_raw: (ch1_1 << 8) | ch1_0,
+        })
+    }
+
+    pub fn get_lux_data(&mut self, config: &LTR303Config) -> Result<LuxData, Error<E>> {
+        let raw_data = self.get_raw_data()?;
+
+        Ok(LuxData {
+            lux_raw: raw_data,
+            lux_phys: raw_to_lux(raw_data.ch1_raw, raw_data.ch0_raw, config),
+        })
+    }
+
+    pub fn standby(&mut self) -> Result<(), Error<E>> {
         self.write_register(
             Register::ALS_CONTR,
             ControlRegister::default().with_mode(Mode::STANDBY).value(),
         )?;
-        todo!()
-    }
-    pub fn get_lux_data(&mut self) -> Result<LuxData, Error<E>> {
-        todo!()
+        Ok(())
     }
 }
 
@@ -241,6 +258,9 @@ mod tests {
         assert_eq!(sensor_status.int_status.value, IntStatus::Active);
 
         assert_eq!(sensor_status.value(), 0b11111000);
+
+        let mut mock = ltr303.destroy();
+        mock.done(); // verify expectations
     }
 
     #[test]
@@ -318,7 +338,7 @@ mod tests {
                 std::vec![Register::ALS_DATA_CH0_1],
                 std::vec![0xBE],
             ), // Reading channel data
-            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_CONTR, 0b0000_1000]), // put sensor to sleep
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_CONTR, 0b0000_0000]), // put sensor to sleep
         ];
         let mock = i2c::Mock::new(&expectations);
 
@@ -333,9 +353,14 @@ mod tests {
 
         while (ltr303.get_status().unwrap().data_status.value != DataStatus::New) {}
 
-        let lux_data = ltr303.get_lux_data().unwrap();
-        assert_eq!(lux_data.ch1_raw, 0xDEAD);
-        assert_eq!(lux_data.ch0_raw, 0xBEEF);
+        let lux_data = ltr303.get_lux_data(&config).unwrap();
+        ltr303.standby().unwrap();
+
+        assert_eq!(lux_data.lux_raw.ch1_raw, 0xDEAD);
+        assert_eq!(lux_data.lux_raw.ch0_raw, 0xBEEF);
+
+        let mut mock = ltr303.destroy();
+        mock.done(); // verify expectations
     }
 
     #[cfg(test)]
