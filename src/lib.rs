@@ -166,31 +166,33 @@ where
 // Define a macro to create a register. This register stores its variables in fields
 #[macro_export]
 macro_rules! create_register {
-    ($reg_name:ident, $($element: ident: $ty: ty),*) => {
+    ($reg_name:ident, {$($element: ident: $ty: ty),*}) => {
         struct $reg_name { $($element: Field<$ty>),* }
 
-        impl $reg_name {
-            fn value(self) -> u8 {
-                let mut temp: u8 = 0x00;
-                $(
-                    temp |= self.$element.bits();
-                )*
-                temp
-            }
+        paste! {
+            impl $reg_name {
+                fn value(self) -> u8 {
+                    let mut temp: u8 = 0x00;
+                    $(
+                        temp |= self.$element.bits();
+                    )*
+                    temp
+                }
 
             // Creates with_<variable> methods
             $(
-                paste!{ fn [<with_ $element>] (self, paste!{[<new_ $element>]}: $ty) -> Self {
+                fn [<with_ $element>] (self, paste!{[<new_ $element>]}: $ty) -> Self {
                     let mut tmp = $reg_name{..self};
                     tmp.$element.value = paste!{[<new_ $element>]};
                     tmp
-                }}
+                }
             )*
+            }
         }
     }
 }
 
-create_register!(ControlRegister, mode: Mode, gain: Gain, sw_reset: bool);
+create_register!(ControlRegister, {mode: Mode, gain: Gain, sw_reset: bool});
 
 impl Default for ControlRegister {
     fn default() -> Self {
@@ -214,11 +216,7 @@ impl Default for ControlRegister {
     }
 }
 
-create_register!(
-    MeasRateRegister,
-    measurement_rate: MeasurementRate,
-    integration_time: IntegrationTime
-);
+create_register!(MeasRateRegister, {measurement_rate: MeasurementRate, integration_time: IntegrationTime});
 
 impl Default for MeasRateRegister {
     fn default() -> Self {
