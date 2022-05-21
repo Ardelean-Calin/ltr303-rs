@@ -3,6 +3,7 @@
 extern crate num_derive;
 use anyhow::Result;
 use embedded_hal::blocking::i2c;
+use types::LuxData;
 
 mod fields;
 mod registers;
@@ -13,7 +14,7 @@ pub use crate::types::Error;
 
 const DEVICE_BASE_ADDRESS: u8 = 0x29;
 
-struct Config {
+struct LTR303Config {
     mode: Mode,
     gain: Gain,
     integration_time: IntegrationTime,
@@ -22,9 +23,9 @@ struct Config {
     threshold_low: u16,
 }
 
-impl Default for Config {
+impl Default for LTR303Config {
     fn default() -> Self {
-        Config {
+        LTR303Config {
             mode: crate::Mode::STANDBY,
             gain: crate::Gain::Gain1x,
             integration_time: crate::IntegrationTime::Ms100,
@@ -45,9 +46,6 @@ struct SensorStatus {
 struct LTR303<I2C> {
     i2c: I2C,
     address: u8,
-    measurement_started: bool,
-    data_ready: bool,
-    config: Config,
 }
 
 impl<I2C, E> LTR303<I2C>
@@ -55,13 +53,10 @@ where
     I2C: i2c::WriteRead<Error = E> + i2c::Read<Error = E> + i2c::Write<Error = E>,
 {
     /// Initializes the LTR303 driver while consuming the i2c bus
-    pub fn init(i2c: I2C, config: Config) -> Self {
+    pub fn init(i2c: I2C) -> Self {
         LTR303 {
             i2c,
             address: DEVICE_BASE_ADDRESS,
-            measurement_started: false,
-            data_ready: false,
-            config: config,
         }
     }
 
@@ -79,35 +74,35 @@ where
     }
 
     // Starts a single-shot measurement!
-    pub fn start_measurement(&mut self) -> Result<(), Error<E>> {
+    pub fn start_measurement(&mut self, config: &LTR303Config) -> Result<(), Error<E>> {
         // Configure gain, set active mode
         let control_reg = ControlRegister::default()
-            .with_gain(self.config.gain)
+            .with_gain(config.gain)
             .with_mode(Mode::ACTIVE);
 
         // Then configure the integration time & measurement rate
         let meas_rate_reg = MeasRateRegister::default()
-            .with_integration_time(self.config.integration_time)
-            .with_measurement_rate(self.config.measurement_rate);
+            .with_integration_time(config.integration_time)
+            .with_measurement_rate(config.measurement_rate);
 
         self.write_register(Register::ALS_MEAS_RATE, meas_rate_reg.value())?;
 
         // Then, configure the thresholds for the interrupt!
         self.write_register(
             Register::ALS_THRES_LOW_0,
-            self.config.threshold_low.to_be_bytes()[1],
+            config.threshold_low.to_be_bytes()[1],
         )?;
         self.write_register(
             Register::ALS_THRES_LOW_1,
-            self.config.threshold_low.to_be_bytes()[0],
+            config.threshold_low.to_be_bytes()[0],
         )?;
         self.write_register(
             Register::ALS_THRES_UP_0,
-            self.config.threshold_up.to_be_bytes()[1],
+            config.threshold_up.to_be_bytes()[1],
         )?;
         self.write_register(
             Register::ALS_THRES_UP_1,
-            self.config.threshold_up.to_be_bytes()[0],
+            config.threshold_up.to_be_bytes()[0],
         )?;
 
         // Then enable interrupts
@@ -116,7 +111,6 @@ where
 
         // Then we start a measurement
         self.write_register(Register::ALS_CONTR, control_reg.value())?;
-        self.measurement_started = true;
 
         Ok(())
     }
@@ -140,7 +134,7 @@ where
         )?;
         todo!()
     }
-    pub fn get_lux_data(&mut self) {
+    pub fn get_lux_data(&mut self) -> Result<LuxData, Error<E>> {
         todo!()
     }
 }
@@ -165,7 +159,7 @@ where
     }
 }
 
-fn raw_to_lux(ch1_data: u16, ch0_data: u16, ltr303_config: &Config) -> f32 {
+fn raw_to_lux(ch1_data: u16, ch0_data: u16, ltr303_config: &LTR303Config) -> f32 {
     let ratio = ch1_data as f32 / (ch0_data as f32 + ch1_data as f32);
     let als_gain: f32 = (&ltr303_config.gain).into();
     let int_time: f32 = (&ltr303_config.integration_time).into();
@@ -204,7 +198,7 @@ mod tests {
         )];
         let mock = i2c::Mock::new(&expectations);
 
-        let mut ltr303 = LTR303::init(mock, crate::Config::default());
+        let mut ltr303 = LTR303::init(mock);
         let mfc = ltr303.get_mfc_id().unwrap();
         assert_eq!(0x05, mfc);
 
@@ -221,7 +215,7 @@ mod tests {
         )];
         let mock = i2c::Mock::new(&expectations);
 
-        let mut ltr303 = LTR303::init(mock, crate::Config::default());
+        let mut ltr303 = LTR303::init(mock);
         let part_id = ltr303.get_part_id().unwrap();
         assert_eq!(0xA0, part_id);
 
@@ -230,13 +224,17 @@ mod tests {
     }
 
     #[test]
-    fn sensor_status(){
-        let expectations = [i2c::Transaction::write_read(LTR303_ADDR, std::vec![Register::ALS_STATUS], std::vec![0b11111010])];
+    fn sensor_status() {
+        let expectations = [i2c::Transaction::write_read(
+            LTR303_ADDR,
+            std::vec![Register::ALS_STATUS],
+            std::vec![0b11111010],
+        )];
         let mock = i2c::Mock::new(&expectations);
 
-        let mut ltr303 = LTR303::init(mock, crate::Config::default());
+        let mut ltr303 = LTR303::init(mock);
         let sensor_status = ltr303.get_status().unwrap();
-        
+
         assert_eq!(sensor_status.data_status.value, DataStatus::Old);
         assert_eq!(sensor_status.data_valid.value, DataValidity::DataInvalid);
         assert_eq!(sensor_status.gain.value, Gain::Gain96x);
@@ -265,16 +263,79 @@ mod tests {
 
         let mock = i2c::Mock::new(&expectations);
 
-        let mut config = crate::Config::default();
+        let mut config = crate::LTR303Config::default();
         config.integration_time = crate::IntegrationTime::Ms200;
         config.measurement_rate = crate::MeasurementRate::Ms2000;
 
-        let mut ltr303 = LTR303::init(mock, config);
+        let mut ltr303 = LTR303::init(mock);
 
-        ltr303.start_measurement().unwrap();
+        ltr303.start_measurement(&config).unwrap();
 
         let mut mock = ltr303.destroy();
         mock.done(); // verify expectations
+    }
+
+    // Do a complete measurement from start to finish and test that we get the proper data
+    #[test]
+    fn single_shot_measurement() {
+        // Start a Gain4x single measurement with integration time 100ms and measurement rate 2000ms,
+        // then after we got a result, put the sensor to sleep.
+        let expectations = [
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_MEAS_RATE, 0b0000_0101]), // set times
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_LOW_0, 0xFF]), // set thresholds
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_LOW_1, 0xFF]), // set thresholds
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_UP_0, 0x00]), // set thresholds
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_THRES_UP_1, 0x00]), // set thresholds
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::INTERRUPT, 0b00000010]), // enable interrupts
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_CONTR, 0b0000_1001]), // wake-up sensor. start
+            i2c::Transaction::write_read(
+                LTR303_ADDR,
+                std::vec![Register::ALS_STATUS],
+                std::vec![0b1010_0000],
+            ), // current status: still measuring
+            i2c::Transaction::write_read(
+                LTR303_ADDR,
+                std::vec![Register::ALS_STATUS],
+                std::vec![0b0010_0100],
+            ), // current status: new data available
+            i2c::Transaction::write_read(
+                LTR303_ADDR,
+                std::vec![Register::ALS_DATA_CH1_0],
+                std::vec![0xAD],
+            ), // Reading channel data
+            i2c::Transaction::write_read(
+                LTR303_ADDR,
+                std::vec![Register::ALS_DATA_CH1_1],
+                std::vec![0xDE],
+            ), // Reading channel data
+            i2c::Transaction::write_read(
+                LTR303_ADDR,
+                std::vec![Register::ALS_DATA_CH0_0],
+                std::vec![0xEF],
+            ), // Reading channel data
+            i2c::Transaction::write_read(
+                LTR303_ADDR,
+                std::vec![Register::ALS_DATA_CH0_1],
+                std::vec![0xBE],
+            ), // Reading channel data
+            i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_CONTR, 0b0000_1000]), // put sensor to sleep
+        ];
+        let mock = i2c::Mock::new(&expectations);
+
+        // Created expected bus communication. Below is the expected developer workflow:
+        let mut config = crate::LTR303Config::default();
+        config.integration_time = crate::IntegrationTime::Ms100;
+        config.measurement_rate = crate::MeasurementRate::Ms2000;
+        config.gain = crate::Gain::Gain4x;
+
+        let mut ltr303 = LTR303::init(mock);
+        ltr303.start_measurement(&config).unwrap();
+
+        while (ltr303.get_status().unwrap().data_status.value != DataStatus::New) {}
+
+        let lux_data = ltr303.get_lux_data().unwrap();
+        assert_eq!(lux_data.ch1_raw, 0xDEAD);
+        assert_eq!(lux_data.ch0_raw, 0xBEEF);
     }
 
     #[cfg(test)]
@@ -290,7 +351,7 @@ mod tests {
             let ch1_data: u16 = 0xFFFF;
 
             // First, test that CH1 >> CH0 returns 0 lux
-            let ltr303_config = crate::Config::default();
+            let ltr303_config = crate::LTR303Config::default();
 
             let lux = raw_to_lux(ch1_data, ch0_data, &ltr303_config);
 
@@ -323,7 +384,7 @@ mod tests {
         }
 
         #[test]
-        fn test_register_from_u8(){
+        fn test_register_from_u8() {
             // Tests that we can properly transform a u8 value to a register with fields!
             let contr_reg_val: u8 = 0b000_010_1_1;
             let control_reg: ControlRegister = contr_reg_val.into();

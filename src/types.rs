@@ -7,3 +7,9 @@ pub enum Error<E> {
     /// configuration mode.
     OperationNotAvailable,
 }
+
+pub struct LuxData {
+    pub ch0_raw: u16,
+    pub ch1_raw: u16,
+    pub lux_phys: f32,
+}
