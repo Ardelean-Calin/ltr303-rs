@@ -121,6 +121,7 @@ where
         Ok(())
     }
 
+    /// Returns the contents of the ALS_STATUS register.
     pub fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
         let data = self.read_register(Register::ALS_STATUS)?;
 
@@ -139,7 +140,9 @@ where
         )?;
         todo!()
     }
-    pub fn get_lux_data(&mut self) {}
+    pub fn get_lux_data(&mut self) {
+        todo!()
+    }
 }
 
 impl<I2C, E> LTR303<I2C>
@@ -185,6 +188,8 @@ mod tests {
     // this code lives inside a `tests` module
 
     extern crate std;
+    use crate::{DataStatus, DataValidity, Gain, IntStatus};
+
     use super::{Register, LTR303};
     use embedded_hal_mock::i2c;
     const LTR303_ADDR: u8 = 0x29;
@@ -221,6 +226,22 @@ mod tests {
 
         let mut mock = ltr303.destroy();
         mock.done(); // verify expectations
+    }
+
+    #[test]
+    fn sensor_status(){
+        let expectations = [i2c::Transaction::write_read(LTR303_ADDR, std::vec![Register::ALS_STATUS], std::vec![0b11111010])];
+        let mock = i2c::Mock::new(&expectations);
+
+        let mut ltr303 = LTR303::init(mock, crate::Config::default());
+        let sensor_status = ltr303.get_status().unwrap();
+        
+        assert_eq!(sensor_status.data_status.value, DataStatus::Old);
+        assert_eq!(sensor_status.data_valid.value, DataValidity::DataInvalid);
+        assert_eq!(sensor_status.gain.value, Gain::Gain96x);
+        assert_eq!(sensor_status.int_status.value, IntStatus::Active);
+
+        assert_eq!(sensor_status.value(), 0b11111000);
     }
 
     #[test]
