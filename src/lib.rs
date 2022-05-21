@@ -190,7 +190,8 @@ mod tests {
     extern crate std;
     use crate::{DataStatus, DataValidity, Gain, IntStatus};
 
-    use super::{Register, LTR303};
+    use super::*;
+
     use embedded_hal_mock::i2c;
     const LTR303_ADDR: u8 = 0x29;
 
@@ -336,7 +337,7 @@ mod tests {
         fn test_fields() {
             // Field one should be 0b00010110
             let field1 = Field {
-                startIndex: 1,
+                start_index: 1,
                 width: 4,
                 value: 0x0Bu8,
             };

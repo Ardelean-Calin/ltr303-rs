@@ -6,8 +6,8 @@ use paste::paste;
 
 pub mod helpers {
     #[inline]
-    pub fn get_mask(startIndex: u8, width: u8) -> u8 {
-        ((1u8 << width) - 1u8) << startIndex
+    pub fn get_mask(start_index: u8, width: u8) -> u8 {
+        ((1u8 << width) - 1u8) << start_index
     }
 }
 
@@ -33,7 +33,7 @@ impl Register {
 
 // General Field structure used by registers
 pub struct Field<T> {
-    pub startIndex: u8,
+    pub start_index: u8,
     pub width: u8,
     pub value: T,
 }
@@ -45,10 +45,10 @@ where
     pub fn bits(self) -> u8 {
         // First create a mask of N '1' bits to be used to truncate the value
         // The algorithm: ((1 << length) - 1) << pos
-        let mask: u8 = self::helpers::get_mask(self.startIndex, self.width);
+        let mask: u8 = self::helpers::get_mask(self.start_index, self.width);
 
         let val: u8 = num_renamed::ToPrimitive::to_u8(&self.value).unwrap();
-        let tmp: u8 = (val << self.startIndex) & mask;
+        let tmp: u8 = (val << self.start_index) & mask;
         tmp
     }
 }
@@ -102,8 +102,8 @@ macro_rules! create_register {
                     let new_reg = $reg_name::default();
 
                     $(
-                        let [<$element _mask>] = self::helpers::get_mask(new_reg.$element.startIndex, new_reg.$element.width);
-                        let [<$element _val>] = FromPrimitive::from_u8( (val & [<$element _mask>]) >> new_reg.$element.startIndex ).unwrap();
+                        let [<$element _mask>] = self::helpers::get_mask(new_reg.$element.start_index, new_reg.$element.width);
+                        let [<$element _val>] = FromPrimitive::from_u8( (val & [<$element _mask>]) >> new_reg.$element.start_index ).unwrap();
                         let new_reg = new_reg.[<with_ $element>]([<$element _val>]);
                     )*
 
@@ -120,17 +120,17 @@ impl Default for ControlRegister {
     fn default() -> Self {
         ControlRegister {
             mode: Field {
-                startIndex: 0,
+                start_index: 0,
                 width: 1,
                 value: Mode::STANDBY,
             },
             gain: Field {
-                startIndex: 2,
+                start_index: 2,
                 width: 3,
                 value: Gain::Gain1x,
             },
             sw_reset: Field {
-                startIndex: 1,
+                start_index: 1,
                 width: 1,
                 value: ResetStatus::Idle,
             },
@@ -144,12 +144,12 @@ impl Default for MeasRateRegister {
     fn default() -> Self {
         MeasRateRegister {
             measurement_rate: Field {
-                startIndex: 0,
+                start_index: 0,
                 width: 3,
                 value: MeasurementRate::Ms500,
             },
             integration_time: Field {
-                startIndex: 3,
+                start_index: 3,
                 width: 3,
                 value: IntegrationTime::Ms100,
             },
@@ -163,12 +163,12 @@ impl Default for InterruptRegister {
     fn default() -> Self {
         InterruptRegister {
             interrupt_mode: Field {
-                startIndex: 1,
+                start_index: 1,
                 width: 1,
                 value: ISRMode::INACTIVE,
             },
             interrupt_polarity: Field {
-                startIndex: 2,
+                start_index: 2,
                 width: 1,
                 value: ISRPol::ActiveLow,
             },
@@ -182,22 +182,22 @@ impl Default for StatusRegister {
     fn default() -> Self {
         StatusRegister {
             data_valid: Field {
-                startIndex: 7,
+                start_index: 7,
                 width: 1,
                 value: DataValidity::DataValid,
             },
             gain: Field {
-                startIndex: 4,
+                start_index: 4,
                 width: 3,
                 value: Gain::Gain1x,
             },
             int_status: Field {
-                startIndex: 3,
+                start_index: 3,
                 width: 1,
                 value: IntStatus::Inactive,
             },
             data_status: Field {
-                startIndex: 2,
+                start_index: 2,
                 width: 1,
                 value: DataStatus::Old,
             },
