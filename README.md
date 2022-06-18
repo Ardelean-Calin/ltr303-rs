@@ -90,8 +90,8 @@ fn main() {
 
 ```
 
-[crates-io]: https://crates.io/crates/ltr303-rs
-[crates-io-badge]: https://img.shields.io/crates/v/ltr303-rs.svg?maxAge=3600
-[crates-io-download]: https://crates.io/crates/ltr303-rs
-[crates-io-download-badge]: https://img.shields.io/crates/d/ltr303-rs.svg?maxAge=3600
+[crates-io]: https://crates.io/crates/ltr303
+[crates-io-badge]: https://img.shields.io/crates/v/ltr303.svg?maxAge=3600
+[crates-io-download]: https://crates.io/crates/ltr303
+[crates-io-download-badge]: https://img.shields.io/crates/d/ltr303.svg?maxAge=3600
 [no-std-badge]: https://img.shields.io/badge/no__std-yes-blue
