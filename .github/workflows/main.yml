@@ -19,6 +19,9 @@ jobs:
     - name: Install components
       run: rustup component add --toolchain stable rustfmt clippy
 
+    - name: Install no-std-check
+      run: cargo install cargo-no-std-check
+
     - name: Fetch
       uses: actions-rs/cargo@v1
       with:
@@ -53,3 +56,9 @@ jobs:
       with:
         command: test
         args: ${{ matrix.ftr }}
+
+    - name: Test no_std
+      uses: actions-rs/cargo@v1
+      with:
+        command: no-std-check
+        args: --manifest-path Cargo.toml
