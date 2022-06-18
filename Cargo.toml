@@ -1,6 +1,6 @@
 [package]
 name = "ltr303"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Ardelean Călin-Petru <ardelean.calin@outlook.com>"]
 repository = "https://github.com/Ardelean-Calin/ltr303-rs"
 license = "AGPL-3.0-or-later"
