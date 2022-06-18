@@ -1,7 +1,6 @@
 #![no_std]
 #[macro_use]
 extern crate num_derive;
-use anyhow::Result;
 use embedded_hal::blocking::i2c;
 use paste::paste;
 use types::LuxData;
