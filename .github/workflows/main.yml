@@ -3,62 +3,55 @@ name: ci
 on: [push]
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-         ftr: [--no-default-features, --all-features]
-    
+  build-and-test:
+    runs-on: ubuntu-latest    
     steps:
-
     - name: Checkout
       uses: actions/checkout@v1
-
     - name: Install components
       run: rustup component add --toolchain stable rustfmt clippy
-
-    - name: Install no-std-check
-      run: cargo install cargo-no-std-check
-
     - name: Fetch
       uses: actions-rs/cargo@v1
       with:
         command: fetch
-
     - name: Format
       uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: --all -- --check
-
     - name: Check
       uses: actions-rs/cargo@v1
       with:
         command: check
         args: ${{ matrix.ftr }}
-
     - name: Clippy
       uses: actions-rs/cargo@v1
       with:
         command: clippy
         args: ${{ matrix.ftr }} -- -D warnings
-
     - name: Build
       uses: actions-rs/cargo@v1
       with:
         command: build
         args: ${{ matrix.ftr }}
-
     - name: Test
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: ${{ matrix.ftr }}
 
-    - name: Test no_std
-      uses: actions-rs/cargo@v1
+  ensure_no_std:
+  name: Ensure no_std
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v1
+    - uses: actions-rs/toolchain@v1
       with:
-        command: no-std-check
-        args: --manifest-path Cargo.toml
+        toolchain: stable
+        override: true
+    - name: Download cargo-nono
+      run: |
+        wget https://github.com/hobofan/cargo-nono/releases/download/0.1.9/cargo-nono-0.1.9-x86_64-unknown-linux-gnu.tar.gz \
+          && tar xfvz cargo-nono-0.1.6-x86_64-unknown-linux-gnu.tar.gz
+    - name: Run check
+      run: ./cargo-nono check
