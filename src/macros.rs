@@ -9,7 +9,7 @@
 ///     structfield2: type2,
 ///     ...
 /// }
-/// 
+///
 /// impl StructName{
 ///     fn with_structfield1(self, new_structfield1: type1) -> Self {..}
 ///     fn with_structfield2(self, new_structfield2: type2) -> Self {..}
