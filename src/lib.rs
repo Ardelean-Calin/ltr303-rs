@@ -1,3 +1,54 @@
+//! # Introduction
+//! This is a platform-agnostic Rust driver for the [`LTR-303 Ambient Light Sensor`](https://optoelectronics.liteon.com/en-global/Led/LED-Component/Detail/926/0/0/16/200) using [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) traits.
+//! 
+//! ## Supported devices
+//! Tested with the following sensor(s):
+//! - [LTR-303ALS-01](https://www.mouser.com/datasheet/2/239/Lite-On_LTR-303ALS-01_DS_ver%201.1-1175269.pdf)
+//! 
+//! ## Usage
+//! ### Setup
+//! 
+//! Instantiate a new driver instance using a [blocking I²C HAL
+//! implementation](https://docs.rs/embedded-hal/0.2.*/embedded_hal/blocking/i2c/index.html).
+//! For example, using `linux-embedded-hal` and an LTR303 sensor: 
+//! ```no_run
+//! use linux_embedded_hal::{I2cdev};
+//! use ltr303;
+//!
+//! let dev = I2cdev::new("/dev/i2c-1").unwrap();
+//! let mut sensor = ltr303::LTR303::init(dev);
+//! let config = ltr303::LTR303Config::default();
+//! ```
+//! 
+//! ### Device Info
+//!
+//! Then, you can query information about the sensor:
+//!
+//! ```no_run
+//! # use linux_embedded_hal::{I2cdev};
+//! # use ltr303;
+//! # let dev = I2cdev::new("/dev/i2c-1").unwrap();
+//! # let mut sensor = ltr303::LTR303::init(dev);
+//! let part_id = sensor.get_part_id().unwrap();
+//! let mfc_id = sensor.get_mfc_id().unwrap();
+//! ```
+//! 
+//! ### Measurements
+//! 
+//! For measuring the illuminance, simply start a measurement and wait for a result:
+//! ```no_run
+//! use linux_embedded_hal::{Delay, I2cdev};
+//! # use ltr303;
+//! # let dev = I2cdev::new("/dev/i2c-1").unwrap();
+//! # let mut sensor = ltr303::LTR303::init(dev);
+//! let config = ltr303::LTR303Config::default();
+//! sensor.start_measurement(&config).unwrap();
+//! while sensor.data_ready().unwrap() != true {}
+//! 
+//! let lux_val = sensor.get_lux_data().unwrap();
+//! println!("LTR303 current lux phys: {}", lux_val.lux_phys);
+//! ```
+//! 
 #![no_std]
 #[macro_use]
 extern crate num_derive;
@@ -112,7 +163,7 @@ where
     }
 
     /// Returns the contents of the ALS_STATUS register.
-    fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
+    pub fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
         let data = self.read_register(Register::ALS_STATUS)?;
 
         let status_reg: StatusRegister = data.into();
@@ -167,7 +218,7 @@ where
 
 impl<I2C, E> LTR303<I2C>
 where
-    I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E>,
+    I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E> + i2c::Read<Error = E>,
 {
     fn write_register(&mut self, register: u8, data: u8) -> Result<(), Error<E>> {
         self.i2c
