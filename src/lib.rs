@@ -15,7 +15,7 @@ pub use crate::fields::*;
 pub use crate::registers::*;
 pub use crate::types::Error;
 
-const DEVICE_BASE_ADDRESS: u8 = 0x29;
+const LTR303_BASE_ADDRESS: u8 = 0x29;
 
 create_struct_with! (LTR303Config, {mode: Mode, gain: Gain, integration_time: IntegrationTime, measurement_rate: MeasurementRate, int_thrsh_up: u16, int_thrsh_down: u16});
 
@@ -34,7 +34,8 @@ impl Default for LTR303Config {
 
 pub struct LTR303<I2C> {
     i2c: I2C,
-    address: u8,
+    gain: Gain,
+    integration_time: IntegrationTime,
 }
 
 impl<I2C, E> LTR303<I2C>
@@ -45,14 +46,17 @@ where
     pub fn init(i2c: I2C) -> Self {
         LTR303 {
             i2c,
-            address: DEVICE_BASE_ADDRESS,
+            gain: Gain::Gain1x,
+            integration_time: IntegrationTime::Ms100,
         }
     }
 
+    /// Get the manufacturer ID stored inside LTR303. This ID should be 0x05.
     pub fn get_mfc_id(&mut self) -> Result<u8, Error<E>> {
         self.read_register(Register::MANUFAC_ID)
     }
 
+    /// Get the part ID stored inside LTR303. This ID should be 0xA0.
     pub fn get_part_id(&mut self) -> Result<u8, Error<E>> {
         self.read_register(Register::PART_ID)
     }
@@ -64,6 +68,10 @@ where
 
     // Starts a single-shot measurement!
     pub fn start_measurement(&mut self, config: &LTR303Config) -> Result<(), Error<E>> {
+        // Save the current gain and integration times => To be used when translating raw to phys
+        self.gain = config.gain;
+        self.integration_time = config.integration_time;
+
         // Configure gain, set active mode
         let control_reg = ControlRegister::default()
             .with_gain(config.gain)
@@ -112,15 +120,40 @@ where
         Ok(status_reg)
     }
 
-    /// Check if new data is ready
+    /// Check if new sensor data is ready.
     pub fn data_ready(&mut self) -> Result<bool, Error<E>> {
         let status = self.get_status()?;
         Ok(status.data_status.value == DataStatus::New)
     }
 
-    // TODO: CH1 data should be read before CH0 data (see pg. 17 of datasheet)
+    /// Reads the Ambient Light Level from LTR303's registers and returns the physical
+    /// lux value.
+    pub fn get_lux_data(&mut self) -> Result<LuxData, Error<E>> {
+        let raw_data = self.get_raw_data()?;
+
+        Ok(LuxData {
+            lux_raw: raw_data,
+            lux_phys: raw_to_lux(
+                raw_data.ch1_raw,
+                raw_data.ch0_raw,
+                self.gain,
+                self.integration_time,
+            ),
+        })
+    }
+
+    /// Puts the sensor in a low-power Standby mode where it consumes 5uA of current.
+    pub fn standby(&mut self) -> Result<(), Error<E>> {
+        self.write_register(
+            Register::ALS_CONTR,
+            ControlRegister::default().with_mode(Mode::STANDBY).value(),
+        )?;
+        Ok(())
+    }
+
     fn get_raw_data(&mut self) -> Result<RawData, Error<E>> {
-        // Read raw data
+        // Read raw illuminance data
+        // CH1 data is be read before CH0 data (see pg. 17 of datasheet)
         let ch1_0 = self.read_register(Register::ALS_DATA_CH1_0)? as u16;
         let ch1_1 = self.read_register(Register::ALS_DATA_CH1_1)? as u16;
         let ch0_0 = self.read_register(Register::ALS_DATA_CH0_0)? as u16;
@@ -131,23 +164,6 @@ where
             ch1_raw: (ch1_1 << 8) | ch1_0,
         })
     }
-
-    pub fn get_lux_data(&mut self, config: &LTR303Config) -> Result<LuxData, Error<E>> {
-        let raw_data = self.get_raw_data()?;
-
-        Ok(LuxData {
-            lux_raw: raw_data,
-            lux_phys: raw_to_lux(raw_data.ch1_raw, raw_data.ch0_raw, config),
-        })
-    }
-
-    pub fn standby(&mut self) -> Result<(), Error<E>> {
-        self.write_register(
-            Register::ALS_CONTR,
-            ControlRegister::default().with_mode(Mode::STANDBY).value(),
-        )?;
-        Ok(())
-    }
 }
 
 impl<I2C, E> LTR303<I2C>
@@ -156,36 +172,34 @@ where
 {
     fn write_register(&mut self, register: u8, data: u8) -> Result<(), Error<E>> {
         self.i2c
-            .write(self.address, &[register, data])
+            .write(LTR303_BASE_ADDRESS, &[register, data])
             .map_err(Error::I2C)
             .and(Ok(()))
     }
 
     fn read_register(&mut self, register: u8) -> Result<u8, Error<E>> {
-        let mut data = [0];
+        let mut data: [u8; 1] = [0];
         self.i2c
-            .write_read(self.address, &[register], &mut data)
+            .write_read(LTR303_BASE_ADDRESS, &[register], &mut data)
             .map_err(Error::I2C)
-            .and(Ok(u8::from(data[0])))
+            .and(Ok(data[0]))
     }
 }
 
-fn raw_to_lux(ch1_data: u16, ch0_data: u16, ltr303_config: &LTR303Config) -> f32 {
+fn raw_to_lux(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) -> f32 {
     let ratio = ch1_data as f32 / (ch0_data as f32 + ch1_data as f32);
-    let als_gain: f32 = (&ltr303_config.gain).into();
-    let int_time: f32 = (&ltr303_config.integration_time).into();
+    let als_gain: f32 = gain.into();
+    let int_time: f32 = itime.into();
 
-    let lux_phys = if ratio < 0.45 {
+    if ratio < 0.45 {
         ((1.7743 * f32::from(ch0_data)) + (1.1059 * f32::from(ch1_data))) / als_gain / int_time
-    } else if ratio >= 0.45 && ratio < 0.64 {
+    } else if (0.45..0.64).contains(&ratio) {
         ((4.2785 * f32::from(ch0_data)) - (1.9548 * f32::from(ch1_data))) / als_gain / int_time
-    } else if ratio >= 0.64 && ratio < 0.85 {
+    } else if (0.64..0.85).contains(&ratio) {
         ((0.5926 * f32::from(ch0_data)) - (0.1185 * f32::from(ch1_data))) / als_gain / int_time
     } else {
         0.0
-    };
-
-    lux_phys
+    }
 }
 
 #[cfg(test)]
@@ -277,9 +291,11 @@ mod tests {
 
         let mock = i2c::Mock::new(&expectations);
 
-        let mut config = crate::LTR303Config::default();
-        config.integration_time = crate::IntegrationTime::Ms200;
-        config.measurement_rate = crate::MeasurementRate::Ms2000;
+        let config = LTR303Config {
+            integration_time: crate::IntegrationTime::Ms200,
+            measurement_rate: crate::MeasurementRate::Ms2000,
+            ..Default::default()
+        };
 
         let mut ltr303 = LTR303::init(mock);
 
@@ -347,7 +363,7 @@ mod tests {
 
         while ltr303.get_status().unwrap().data_status.value != DataStatus::New {}
 
-        let lux_data = ltr303.get_lux_data(&config).unwrap();
+        let lux_data = ltr303.get_lux_data().unwrap();
         ltr303.standby().unwrap();
 
         assert_eq!(lux_data.lux_raw.ch1_raw, 0xDEAD);
@@ -372,14 +388,24 @@ mod tests {
             // First, test that CH1 >> CH0 returns 0 lux
             let ltr303_config = crate::LTR303Config::default();
 
-            let lux = raw_to_lux(ch1_data, ch0_data, &ltr303_config);
+            let lux = raw_to_lux(
+                ch1_data,
+                ch0_data,
+                ltr303_config.gain,
+                ltr303_config.integration_time,
+            );
 
             assert_eq!(lux, 0.0);
 
             // Then a normal random value testing ratio >= 0.45 && ratio < 0.64
             let ch0_data: u16 = 0x1000;
             let ch1_data: u16 = 0x1000;
-            let lux = raw_to_lux(ch1_data, ch0_data, &ltr303_config);
+            let lux = raw_to_lux(
+                ch1_data,
+                ch0_data,
+                ltr303_config.gain,
+                ltr303_config.integration_time,
+            );
 
             assert_eq!(lux, 9517.875);
         }
@@ -392,20 +418,20 @@ mod tests {
                 .with_gain(Gain::Gain8x);
 
             assert_eq!(control_reg.gain.value, Gain::Gain8x);
-            assert_eq!(control_reg.value(), 0b000_011_0_0);
+            assert_eq!(control_reg.value(), 0b0000_1100);
 
             let measrate_reg = MeasRateRegister::default()
                 .with_integration_time(IntegrationTime::Ms200)
                 .with_measurement_rate(MeasurementRate::Ms2000);
 
             assert_eq!(measrate_reg.integration_time.value, IntegrationTime::Ms200);
-            assert_eq!(measrate_reg.value(), 0b00_010_101);
+            assert_eq!(measrate_reg.value(), 0b0001_0101);
         }
 
         #[test]
         fn test_register_from_u8() {
             // Tests that we can properly transform a u8 value to a register with fields!
-            let contr_reg_val: u8 = 0b000_010_1_1;
+            let contr_reg_val: u8 = 0b0000_1011;
             let control_reg: ControlRegister = contr_reg_val.into();
 
             assert_eq!(control_reg.gain.value, Gain::Gain4x);
