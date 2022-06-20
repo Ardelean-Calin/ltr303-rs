@@ -42,7 +42,7 @@
 //! # let dev = I2cdev::new("/dev/i2c-1").unwrap();
 //! # let mut sensor = ltr303::LTR303::init(dev);
 //! let config = ltr303::LTR303Config::default();
-//! sensor.start_measurement(&config).unwrap();
+//! sensor.start_measurement(config).unwrap();
 //! while sensor.data_ready().unwrap() != true {}
 //!
 //! let lux_val = sensor.get_lux_data().unwrap();
@@ -52,6 +52,8 @@
 #![no_std]
 #[macro_use]
 extern crate num_derive;
+
+use core::cell::RefCell;
 use embedded_hal::blocking::i2c;
 use paste::paste;
 use types::LuxData;
@@ -83,9 +85,8 @@ impl Default for LTR303Config {
 }
 
 pub struct LTR303<I2C> {
-    i2c: I2C,
-    gain: Gain,
-    integration_time: IntegrationTime,
+    i2c: RefCell<I2C>,
+    config: LTR303Config,
 }
 
 impl<I2C, E> LTR303<I2C>
@@ -95,33 +96,23 @@ where
     /// Initializes the LTR303 driver while consuming the i2c bus
     pub fn init(i2c: I2C) -> Self {
         LTR303 {
-            i2c,
-            gain: Gain::Gain1x,
-            integration_time: IntegrationTime::Ms100,
+            i2c: RefCell::new(i2c),
+            config: LTR303Config::default(),
         }
     }
 
     /// Get the manufacturer ID stored inside LTR303. This ID should be 0x05.
-    pub fn get_mfc_id(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_mfc_id(&self) -> Result<u8, Error<E>> {
         self.read_register(Register::MANUFAC_ID)
     }
 
     /// Get the part ID stored inside LTR303. This ID should be 0xA0.
-    pub fn get_part_id(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_part_id(&self) -> Result<u8, Error<E>> {
         self.read_register(Register::PART_ID)
     }
 
-    /// Destroy driver instance, return I²C bus instance.
-    pub fn destroy(self) -> I2C {
-        self.i2c
-    }
-
     // Starts a single-shot measurement!
-    pub fn start_measurement(&mut self, config: &LTR303Config) -> Result<(), Error<E>> {
-        // Save the current gain and integration times => To be used when translating raw to phys
-        self.gain = config.gain;
-        self.integration_time = config.integration_time;
-
+    pub fn start_measurement(&mut self, config: LTR303Config) -> Result<(), Error<E>> {
         // Configure gain, set active mode
         let control_reg = ControlRegister::default()
             .with_gain(config.gain)
@@ -159,11 +150,14 @@ where
         // Then we start a measurement
         self.write_register(Register::ALS_CONTR, control_reg.value())?;
 
+        // Save the current config
+        self.config = config;
+
         Ok(())
     }
 
     /// Returns the contents of the ALS_STATUS register.
-    pub fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
+    pub fn get_status(&self) -> Result<StatusRegister, Error<E>> {
         let data = self.read_register(Register::ALS_STATUS)?;
 
         let status_reg: StatusRegister = data.into();
@@ -171,14 +165,14 @@ where
     }
 
     /// Check if new sensor data is ready.
-    pub fn data_ready(&mut self) -> Result<bool, Error<E>> {
+    pub fn data_ready(&self) -> Result<bool, Error<E>> {
         let status = self.get_status()?;
         Ok(status.data_status.value == DataStatus::New)
     }
 
     /// Reads the Ambient Light Level from LTR303's registers and returns the physical
     /// lux value.
-    pub fn get_lux_data(&mut self) -> Result<LuxData, Error<E>> {
+    pub fn get_lux_data(&self) -> Result<LuxData, Error<E>> {
         let raw_data = self.get_raw_data()?;
 
         Ok(LuxData {
@@ -186,14 +180,14 @@ where
             lux_phys: raw_to_lux(
                 raw_data.ch1_raw,
                 raw_data.ch0_raw,
-                self.gain,
-                self.integration_time,
+                self.config.gain,
+                self.config.integration_time,
             ),
         })
     }
 
     /// Puts the sensor in a low-power Standby mode where it consumes 5uA of current.
-    pub fn standby(&mut self) -> Result<(), Error<E>> {
+    pub fn standby(&self) -> Result<(), Error<E>> {
         self.write_register(
             Register::ALS_CONTR,
             ControlRegister::default().with_mode(Mode::STANDBY).value(),
@@ -201,7 +195,7 @@ where
         Ok(())
     }
 
-    fn get_raw_data(&mut self) -> Result<RawData, Error<E>> {
+    fn get_raw_data(&self) -> Result<RawData, Error<E>> {
         // Read raw illuminance data
         // CH1 data is be read before CH0 data (see pg. 17 of datasheet)
         let ch1_0 = self.read_register(Register::ALS_DATA_CH1_0)? as u16;
@@ -220,16 +214,18 @@ impl<I2C, E> LTR303<I2C>
 where
     I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E> + i2c::Read<Error = E>,
 {
-    fn write_register(&mut self, register: u8, data: u8) -> Result<(), Error<E>> {
+    fn write_register(&self, register: u8, data: u8) -> Result<(), Error<E>> {
         self.i2c
+            .borrow_mut()
             .write(LTR303_BASE_ADDRESS, &[register, data])
             .map_err(Error::I2C)
             .and(Ok(()))
     }
 
-    fn read_register(&mut self, register: u8) -> Result<u8, Error<E>> {
+    fn read_register(&self, register: u8) -> Result<u8, Error<E>> {
         let mut data: [u8; 1] = [0];
         self.i2c
+            .borrow_mut()
             .write_read(LTR303_BASE_ADDRESS, &[register], &mut data)
             .map_err(Error::I2C)
             .and(Ok(data[0]))
@@ -273,12 +269,9 @@ mod tests {
         )];
         let mock = i2c::Mock::new(&expectations);
 
-        let mut ltr303 = LTR303::init(mock);
+        let ltr303 = LTR303::init(mock);
         let mfc = ltr303.get_mfc_id().unwrap();
         assert_eq!(0x05, mfc);
-
-        let mut mock = ltr303.destroy();
-        mock.done(); // verify expectations
     }
 
     #[test]
@@ -290,12 +283,9 @@ mod tests {
         )];
         let mock = i2c::Mock::new(&expectations);
 
-        let mut ltr303 = LTR303::init(mock);
+        let ltr303 = LTR303::init(mock);
         let part_id = ltr303.get_part_id().unwrap();
         assert_eq!(0xA0, part_id);
-
-        let mut mock = ltr303.destroy();
-        mock.done(); // verify expectations
     }
 
     #[test]
@@ -307,7 +297,7 @@ mod tests {
         )];
         let mock = i2c::Mock::new(&expectations);
 
-        let mut ltr303 = LTR303::init(mock);
+        let ltr303 = LTR303::init(mock);
         let sensor_status = ltr303.get_status().unwrap();
 
         assert_eq!(sensor_status.data_status.value, DataStatus::Old);
@@ -316,9 +306,6 @@ mod tests {
         assert_eq!(sensor_status.int_status.value, IntStatus::Active);
 
         assert_eq!(sensor_status.value(), 0b11111000);
-
-        let mut mock = ltr303.destroy();
-        mock.done(); // verify expectations
     }
 
     #[test]
@@ -349,10 +336,7 @@ mod tests {
 
         let mut ltr303 = LTR303::init(mock);
 
-        ltr303.start_measurement(&config).unwrap();
-
-        let mut mock = ltr303.destroy();
-        mock.done(); // verify expectations
+        ltr303.start_measurement(config).unwrap();
     }
 
     // Do a complete measurement from start to finish and test that we get the proper data
@@ -409,7 +393,7 @@ mod tests {
             .with_gain(crate::Gain::Gain4x);
 
         let mut ltr303 = LTR303::init(mock);
-        ltr303.start_measurement(&config).unwrap();
+        ltr303.start_measurement(config).unwrap();
 
         while ltr303.get_status().unwrap().data_status.value != DataStatus::New {}
 
@@ -418,9 +402,6 @@ mod tests {
 
         assert_eq!(lux_data.lux_raw.ch1_raw, 0xDEAD);
         assert_eq!(lux_data.lux_raw.ch0_raw, 0xBEEF);
-
-        let mut mock = ltr303.destroy();
-        mock.done(); // verify expectations
     }
 
     #[cfg(test)]

@@ -11,13 +11,7 @@ categories = ["embedded", "hardware-support", "no-std"]
 homepage = "https://github.com/Ardelean-Calin/ltr303-rs"
 documentation = "https://docs.rs/ltr303"
 exclude = [".devcontainer", ".vscode"]
-include = [
-    "**/*.rs",
-    "Cargo.toml",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-]
+include = ["**/*.rs", "Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE"]
 
 edition = "2021"
 
@@ -39,5 +33,10 @@ default-features = false
 [dev-dependencies]
 embedded-hal-mock = "0.8.0"
 linux-embedded-hal = "0.3.2"
+tokio-test = "*"
 
 # [build-dependencies]
+[profile.release]
+opt-level = 'z'   # Optimize for size
+lto = true
+codegen-units = 1
