@@ -200,20 +200,6 @@ where
         )?;
         Ok(())
     }
-
-    fn get_raw_data(&mut self) -> Result<RawData, Error<E>> {
-        // Read raw illuminance data
-        // CH1 data is be read before CH0 data (see pg. 17 of datasheet)
-        let ch1_0 = self.read_register(Register::ALS_DATA_CH1_0)? as u16;
-        let ch1_1 = self.read_register(Register::ALS_DATA_CH1_1)? as u16;
-        let ch0_0 = self.read_register(Register::ALS_DATA_CH0_0)? as u16;
-        let ch0_1 = self.read_register(Register::ALS_DATA_CH0_1)? as u16;
-
-        Ok(RawData {
-            ch0_raw: (ch0_1 << 8) | ch0_0,
-            ch1_raw: (ch1_1 << 8) | ch1_0,
-        })
-    }
 }
 
 impl<I2C, E> LTR303<I2C>
@@ -233,6 +219,20 @@ where
             .write_read(LTR303_BASE_ADDRESS, &[register], &mut data)
             .map_err(Error::I2C)
             .and(Ok(data[0]))
+    }
+
+    fn get_raw_data(&mut self) -> Result<RawData, Error<E>> {
+        // Read raw illuminance data
+        // Use a single transaction to ensure that the data is from the same measurement
+        // (see pg. 17 of datasheet)
+        let mut data: [u8; 4] = [0; 4];
+        self.i2c
+            .write_read(LTR303_BASE_ADDRESS, &[Register::ALS_DATA_CH1_0], &mut data)
+            .map_err(Error::I2C)?;
+        let ch1_raw = u16::from_le_bytes([data[0], data[1]]);
+        let ch0_raw = u16::from_le_bytes([data[2], data[3]]);
+
+        Ok(RawData { ch0_raw, ch1_raw })
     }
 }
 
@@ -381,22 +381,7 @@ mod tests {
             i2c::Transaction::write_read(
                 LTR303_ADDR,
                 std::vec![Register::ALS_DATA_CH1_0],
-                std::vec![0xAD],
-            ), // Reading channel data
-            i2c::Transaction::write_read(
-                LTR303_ADDR,
-                std::vec![Register::ALS_DATA_CH1_1],
-                std::vec![0xDE],
-            ), // Reading channel data
-            i2c::Transaction::write_read(
-                LTR303_ADDR,
-                std::vec![Register::ALS_DATA_CH0_0],
-                std::vec![0xEF],
-            ), // Reading channel data
-            i2c::Transaction::write_read(
-                LTR303_ADDR,
-                std::vec![Register::ALS_DATA_CH0_1],
-                std::vec![0xBE],
+                std::vec![0xAD, 0xDE, 0xEF, 0xBE],
             ), // Reading channel data
             i2c::Transaction::write(LTR303_ADDR, std::vec![Register::ALS_CONTR, 0b0000_0000]), // put sensor to sleep
         ];
