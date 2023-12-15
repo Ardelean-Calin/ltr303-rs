@@ -1,9 +1,9 @@
 [package]
 name = "ltr303"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Ardelean Călin-Petru <ardelean.calin@outlook.com>"]
 repository = "https://github.com/Ardelean-Calin/ltr303-rs"
-license = "AGPL-3.0-or-later"
+license = "Apache-2.0"
 description = "Platform agnostic Rust driver for the LTR-303 Ambient Light Sensor."
 readme = "README.md"
 keywords = ["ambient", "light", "sensor", "embedded-hal-driver", "als"]
