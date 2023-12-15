@@ -37,9 +37,9 @@ fn main() {
     let dev = I2cdev::new("/dev/i2c-1").unwrap();
     let mut sensor = LTR303::init(dev);
     let config = LTR303Config::default();
+    sensor.start_measurement(&config).unwrap();
 
     loop {
-        sensor.start_measurement(&config).unwrap();
         while sensor.data_ready().unwrap() != true {
             // Wait for measurement ready
         }
@@ -74,9 +74,9 @@ fn main() {
     let mut ltr303 = LTR303::init(_i2c);
     let ltr303_config =
         LTR303Config::default().with_integration_time(ltr303::IntegrationTime::Ms400);
+    ltr303.start_measurement(&ltr303_config).unwrap();
 
     loop {
-        ltr303.start_measurement(&ltr303_config).unwrap();
         while ltr303.data_ready().unwrap() != true {
             // Wait for measurement ready
         }
