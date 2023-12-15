@@ -90,6 +90,17 @@ fn main() {
 
 ```
 
+## Development
+
+For easy development, a `flake.nix` is provided. Make sure you have [Nix](https://nixos.org/) installed, as well as the flake command enabled (for example by adding `experimental-features = nix-command flakes` to `~/.config/nix/nix.conf`)
+and then simply run
+
+```
+nix develop
+```
+
+inside the project folder to have a complete build and development environment with all required dependencies for `ltr303-rs`.
+
 [crates-io]: https://crates.io/crates/ltr303
 [crates-io-badge]: https://img.shields.io/crates/v/ltr303.svg?maxAge=3600
 [crates-io-download]: https://crates.io/crates/ltr303
