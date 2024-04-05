@@ -52,7 +52,7 @@
 #![no_std]
 #[macro_use]
 extern crate num_derive;
-use embedded_hal::blocking::i2c;
+use embedded_hal::i2c;
 use paste::paste;
 use types::LuxData;
 use types::RawData;
@@ -90,7 +90,7 @@ pub struct LTR303<I2C> {
 
 impl<I2C, E> LTR303<I2C>
 where
-    I2C: i2c::WriteRead<Error = E> + i2c::Read<Error = E> + i2c::Write<Error = E>,
+    I2C: i2c::I2c<Error = E>,
 {
     /// Initializes the LTR303 driver while consuming the i2c bus
     pub fn init(i2c: I2C) -> Self {
@@ -204,7 +204,7 @@ where
 
 impl<I2C, E> LTR303<I2C>
 where
-    I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E> + i2c::Read<Error = E>,
+    I2C: i2c::I2c<Error = E>,
 {
     fn write_register(&mut self, register: u8, data: u8) -> Result<(), Error<E>> {
         self.i2c
@@ -261,7 +261,7 @@ mod tests {
 
     use super::*;
 
-    use embedded_hal_mock::i2c;
+    use embedded_hal_mock::eh1::i2c;
     const LTR303_ADDR: u8 = 0x29;
 
     #[test]
