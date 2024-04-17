@@ -63,7 +63,6 @@ mod registers;
 mod types;
 pub use crate::fields::*;
 pub use crate::registers::*;
-pub use crate::types::Error;
 
 const LTR303_BASE_ADDRESS: u8 = 0x29;
 
@@ -102,12 +101,12 @@ where
     }
 
     /// Get the manufacturer ID stored inside LTR303. This ID should be 0x05.
-    pub fn get_mfc_id(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_mfc_id(&mut self) -> Result<u8, E> {
         self.read_register(Register::MANUFAC_ID)
     }
 
     /// Get the part ID stored inside LTR303. This ID should be 0xA0.
-    pub fn get_part_id(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_part_id(&mut self) -> Result<u8, E> {
         self.read_register(Register::PART_ID)
     }
 
@@ -117,7 +116,7 @@ where
     }
 
     // Starts a single-shot measurement!
-    pub fn start_measurement(&mut self, config: &LTR303Config) -> Result<(), Error<E>> {
+    pub fn start_measurement(&mut self, config: &LTR303Config) -> Result<(), E> {
         // Save the current gain and integration times => To be used when translating raw to phys
         self.gain = config.gain;
         self.integration_time = config.integration_time;
@@ -163,7 +162,7 @@ where
     }
 
     /// Returns the contents of the ALS_STATUS register.
-    pub fn get_status(&mut self) -> Result<StatusRegister, Error<E>> {
+    pub fn get_status(&mut self) -> Result<StatusRegister, E> {
         let data = self.read_register(Register::ALS_STATUS)?;
 
         let status_reg: StatusRegister = data.into();
@@ -171,14 +170,14 @@ where
     }
 
     /// Check if new sensor data is ready.
-    pub fn data_ready(&mut self) -> Result<bool, Error<E>> {
+    pub fn data_ready(&mut self) -> Result<bool, E> {
         let status = self.get_status()?;
         Ok(status.data_status.value == DataStatus::New)
     }
 
     /// Reads the Ambient Light Level from LTR303's registers and returns the physical
     /// lux value.
-    pub fn get_lux_data(&mut self) -> Result<LuxData, Error<E>> {
+    pub fn get_lux_data(&mut self) -> Result<LuxData, E> {
         let raw_data = self.get_raw_data()?;
 
         Ok(LuxData {
@@ -193,7 +192,7 @@ where
     }
 
     /// Puts the sensor in a low-power Standby mode where it consumes 5uA of current.
-    pub fn standby(&mut self) -> Result<(), Error<E>> {
+    pub fn standby(&mut self) -> Result<(), E> {
         self.write_register(
             Register::ALS_CONTR,
             ControlRegister::default().with_mode(Mode::STANDBY).value(),
@@ -206,29 +205,26 @@ impl<I2C, E> LTR303<I2C>
 where
     I2C: i2c::I2c<Error = E>,
 {
-    fn write_register(&mut self, register: u8, data: u8) -> Result<(), Error<E>> {
+    fn write_register(&mut self, register: u8, data: u8) -> Result<(), E> {
         self.i2c
             .write(LTR303_BASE_ADDRESS, &[register, data])
-            .map_err(Error::I2C)
             .and(Ok(()))
     }
 
-    fn read_register(&mut self, register: u8) -> Result<u8, Error<E>> {
+    fn read_register(&mut self, register: u8) -> Result<u8, E> {
         let mut data: [u8; 1] = [0];
         self.i2c
             .write_read(LTR303_BASE_ADDRESS, &[register], &mut data)
-            .map_err(Error::I2C)
             .and(Ok(data[0]))
     }
 
-    fn get_raw_data(&mut self) -> Result<RawData, Error<E>> {
+    fn get_raw_data(&mut self) -> Result<RawData, E> {
         // Read raw illuminance data
         // Use a single transaction to ensure that the data is from the same measurement
         // (see pg. 17 of datasheet)
         let mut data: [u8; 4] = [0; 4];
         self.i2c
-            .write_read(LTR303_BASE_ADDRESS, &[Register::ALS_DATA_CH1_0], &mut data)
-            .map_err(Error::I2C)?;
+            .write_read(LTR303_BASE_ADDRESS, &[Register::ALS_DATA_CH1_0], &mut data)?;
         let ch1_raw = u16::from_le_bytes([data[0], data[1]]);
         let ch0_raw = u16::from_le_bytes([data[2], data[3]]);
 
