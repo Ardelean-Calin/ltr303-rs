@@ -45,7 +45,7 @@ fn main() {
         }
 
         let lux_val = sensor.get_lux_data().unwrap();
-        println!("LTR303 current lux phys: {}", lux_val.lux_phys);
+        println!("LTR303 current lux phys: {}", lux_val.lux_phys());
     }
 }
 ```
@@ -82,7 +82,7 @@ fn main() {
         }
 
         let lux_val = ltr303.get_lux_data().unwrap();
-        println!("LTR303 current lux phys: {}", lux_val.lux_phys);
+        println!("LTR303 current lux phys: {}", lux_val.lux_phys());
 
         FreeRtos.delay_ms(3000_u32);
     }

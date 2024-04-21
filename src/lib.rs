@@ -182,12 +182,8 @@ where
 
         Ok(LuxData {
             lux_raw: raw_data,
-            lux_phys: raw_to_lux(
-                raw_data.ch1_raw,
-                raw_data.ch0_raw,
-                self.gain,
-                self.integration_time,
-            ),
+            gain: self.gain,
+            integration_time: self.integration_time,
         })
     }
 
@@ -229,22 +225,6 @@ where
         let ch0_raw = u16::from_le_bytes([data[2], data[3]]);
 
         Ok(RawData { ch0_raw, ch1_raw })
-    }
-}
-
-fn raw_to_lux(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) -> f32 {
-    let ratio = ch1_data as f32 / (ch0_data as f32 + ch1_data as f32);
-    let als_gain: f32 = gain.into();
-    let int_time: f32 = itime.into();
-
-    if ratio < 0.45 {
-        ((1.7743 * f32::from(ch0_data)) + (1.1059 * f32::from(ch1_data))) / als_gain / int_time
-    } else if (0.45..0.64).contains(&ratio) {
-        ((4.2785 * f32::from(ch0_data)) - (1.9548 * f32::from(ch1_data))) / als_gain / int_time
-    } else if (0.64..0.85).contains(&ratio) {
-        ((0.5926 * f32::from(ch0_data)) - (0.1185 * f32::from(ch1_data))) / als_gain / int_time
-    } else {
-        0.0
     }
 }
 
@@ -407,39 +387,9 @@ mod tests {
     #[cfg(test)]
     mod unit_tests {
         use crate::{
-            raw_to_lux, ControlRegister, Field, Gain, IntegrationTime, MeasRateRegister,
-            MeasurementRate, Mode, ResetStatus,
+            ControlRegister, Field, Gain, IntegrationTime, MeasRateRegister, MeasurementRate, Mode,
+            ResetStatus,
         };
-
-        #[test]
-        fn calculate_lux_from_raw() {
-            let ch0_data: u16 = 0x0000;
-            let ch1_data: u16 = 0xFFFF;
-
-            // First, test that CH1 >> CH0 returns 0 lux
-            let ltr303_config = crate::LTR303Config::default();
-
-            let lux = raw_to_lux(
-                ch1_data,
-                ch0_data,
-                ltr303_config.gain,
-                ltr303_config.integration_time,
-            );
-
-            assert_eq!(lux, 0.0);
-
-            // Then a normal random value testing ratio >= 0.45 && ratio < 0.64
-            let ch0_data: u16 = 0x1000;
-            let ch1_data: u16 = 0x1000;
-            let lux = raw_to_lux(
-                ch1_data,
-                ch0_data,
-                ltr303_config.gain,
-                ltr303_config.integration_time,
-            );
-
-            assert_eq!(lux, 9517.875);
-        }
 
         #[test]
         fn test_registers() {
