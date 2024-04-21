@@ -95,8 +95,7 @@ fn raw_to_lux_u32(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTi
         _ => (0, 0),
     };
 
-    (((factors.0 * ch0_data as i32) as i64 + (factors.1 * ch1_data as i32) as i64) * 10
-        / als_gain as i64) as u32
+    (((factors.0 * ch0_data as i64) + (factors.1 * ch1_data as i64)) / als_gain as i64) as u32
         / int_time
 }
 
@@ -138,6 +137,6 @@ mod tests {
         );
 
         assert_eq!(lux, 9517.875);
-        assert_eq!(lux_u32, 9517_8752);
+        assert_eq!(lux_u32, 9517_875);
     }
 }
