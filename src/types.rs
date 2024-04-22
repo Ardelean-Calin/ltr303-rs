@@ -65,7 +65,7 @@ fn raw_to_lux(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) 
 }
 
 fn raw_to_lux_u32(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) -> u32 {
-    let ratio = ch1_data as u32 * 1000 / (ch0_data as u32 + ch1_data as u32);
+    let ratio = (ch1_data as u32 * 1000).checked_div(ch0_data as u32 + ch1_data as u32);
     let als_gain = match gain {
         Gain::Gain1x => 1,
         Gain::Gain2x => 2,
@@ -89,9 +89,9 @@ fn raw_to_lux_u32(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTi
 
     // scaled 10000x
     let factors = match ratio {
-        0..=449 => (17743, 11059),
-        450..=639 => (42785, -19548),
-        640..=849 => (5926, 1185),
+        Some(0..=449) => (17743, 11059),
+        Some(450..=639) => (42785, -19548),
+        Some(640..=849) => (5926, 1185),
         _ => (0, 0),
     };
 
