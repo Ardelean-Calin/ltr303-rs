@@ -46,7 +46,7 @@
 //! while sensor.data_ready().unwrap() != true {}
 //!
 //! let lux_val = sensor.get_lux_data().unwrap();
-//! println!("LTR303 current lux phys: {}", lux_val.lux_phys());
+//! println!("LTR303 current lux phys: {}", lux_val.millilux_phys() as f32 / 1000.0);
 //! ```
 //!
 #![no_std]
