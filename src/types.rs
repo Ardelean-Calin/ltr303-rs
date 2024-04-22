@@ -26,20 +26,9 @@ impl LuxData {
         &self.lux_raw
     }
 
-    /// Value in Lux.
-    pub fn lux_phys(&self) -> f32 {
-        raw_to_lux(
-            self.lux_raw.ch1_raw,
-            self.lux_raw.ch0_raw,
-            self.gain,
-            self.integration_time,
-        )
-    }
-
-    /// Value in milli-Lux. Useful on platforms that do not have a floating
-    /// point unit.
-    pub fn lux_phys_u32(&self) -> u32 {
-        raw_to_lux_u32(
+    /// Value in milli-Lux.
+    pub fn millilux_phys(&self) -> u32 {
+        raw_to_millilux(
             self.lux_raw.ch1_raw,
             self.lux_raw.ch0_raw,
             self.gain,
@@ -48,23 +37,8 @@ impl LuxData {
     }
 }
 
-fn raw_to_lux(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) -> f32 {
-    let ratio = ch1_data as f32 / (ch0_data as f32 + ch1_data as f32);
-    let als_gain: f32 = gain.into();
-    let int_time: f32 = itime.into();
-
-    if ratio < 0.45 {
-        ((1.7743 * f32::from(ch0_data)) + (1.1059 * f32::from(ch1_data))) / als_gain / int_time
-    } else if (0.45..0.64).contains(&ratio) {
-        ((4.2785 * f32::from(ch0_data)) - (1.9548 * f32::from(ch1_data))) / als_gain / int_time
-    } else if (0.64..0.85).contains(&ratio) {
-        ((0.5926 * f32::from(ch0_data)) + (0.1185 * f32::from(ch1_data))) / als_gain / int_time
-    } else {
-        0.0
-    }
-}
-
-fn raw_to_lux_u32(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) -> u32 {
+fn raw_to_millilux(ch1_data: u16, ch0_data: u16, gain: Gain, itime: IntegrationTime) -> u32 {
+    // See: https://github.com/aniketpalu/LTR303/blob/main/LTR-303%20329_Appendix%20A%20Ver_1.0_22%20Feb%202013.pdf
     let ratio = (ch1_data as u32 * 1000).checked_div(ch0_data as u32 + ch1_data as u32);
     let als_gain = match gain {
         Gain::Gain1x => 1,
