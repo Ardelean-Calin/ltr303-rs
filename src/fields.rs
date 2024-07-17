@@ -14,19 +14,6 @@ pub enum Gain {
     Gain96x = 0x07,
 }
 
-impl From<Gain> for f32 {
-    fn from(val: Gain) -> Self {
-        match val {
-            Gain::Gain1x => 1.0,
-            Gain::Gain2x => 2.0,
-            Gain::Gain4x => 4.0,
-            Gain::Gain8x => 8.0,
-            Gain::Gain48x => 48.0,
-            Gain::Gain96x => 96.0,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum MeasurementRate {
     Ms50 = 0x00,
@@ -47,22 +34,6 @@ pub enum IntegrationTime {
     Ms250 = 0x05,
     Ms300 = 0x06,
     Ms350 = 0x07,
-}
-
-impl From<IntegrationTime> for f32 {
-    // See: https://github.com/aniketpalu/LTR303/blob/main/LTR-303%20329_Appendix%20A%20Ver_1.0_22%20Feb%202013.pdf
-    fn from(val: IntegrationTime) -> Self {
-        match val {
-            IntegrationTime::Ms50 => 0.5,
-            IntegrationTime::Ms100 => 1.0,
-            IntegrationTime::Ms150 => 1.5,
-            IntegrationTime::Ms200 => 2.0,
-            IntegrationTime::Ms250 => 2.5,
-            IntegrationTime::Ms300 => 3.0,
-            IntegrationTime::Ms350 => 3.5,
-            IntegrationTime::Ms400 => 4.0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, FromPrimitive, ToPrimitive)]
