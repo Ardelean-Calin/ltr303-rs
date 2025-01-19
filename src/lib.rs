@@ -59,10 +59,15 @@ use types::RawData;
 
 mod fields;
 mod macros;
+#[cfg(feature = "async")]
+mod nb;
 mod registers;
 mod types;
 pub use crate::fields::*;
 pub use crate::registers::*;
+
+#[cfg(feature = "async")]
+pub use nb::LTR303Async;
 
 const LTR303_BASE_ADDRESS: u8 = 0x29;
 
